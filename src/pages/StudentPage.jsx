@@ -5,6 +5,7 @@ import { COMMUNITY_STAGES } from '../constants/tree'
 import CommunityTree from '../components/CommunityTree'
 import Celebration from '../components/Celebration'
 import AppHeader from '../components/AppHeader'
+import { TONES, parseGrantReason } from '../constants/talentRules'
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('ko-KR', {
@@ -168,18 +169,26 @@ function StudentPage() {
               </h2>
               {d?.grants?.length ? (
                 <ul className="divide-y divide-gray-50">
-                  {d.grants.map((g) => (
-                    <li key={g.id} className="px-5 py-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-gray-700">
-                          🧑‍🏫 {g.teacher_name} 선생님
-                        </span>
-                        <span className="text-sm font-bold text-emerald-600">+{g.amount}</span>
-                      </div>
-                      {g.reason && <p className="mt-0.5 text-sm text-gray-500">“{g.reason}”</p>}
-                      <p className="mt-0.5 text-xs text-gray-300">{formatDate(g.created_at)}</p>
-                    </li>
-                  ))}
+                  {d.grants.map((g) => {
+                    const { category, detail } = parseGrantReason(g.reason)
+                    return (
+                      <li key={g.id} className="px-5 py-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold text-gray-700">
+                            🧑‍🏫 {g.teacher_name} 선생님
+                          </span>
+                          <span className="text-sm font-bold text-emerald-600">+{g.amount}</span>
+                        </div>
+                        {category && (
+                          <span className={`mt-1 inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full border ${TONES[category.tone].tag}`}>
+                            {category.icon} {category.label}
+                          </span>
+                        )}
+                        {detail && <p className="mt-1 text-sm text-gray-500">“{detail}”</p>}
+                        <p className="mt-0.5 text-xs text-gray-300">{formatDate(g.created_at)}</p>
+                      </li>
+                    )
+                  })}
                 </ul>
               ) : (
                 <p className="px-5 py-6 text-sm text-gray-400 text-center">

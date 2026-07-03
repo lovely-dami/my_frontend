@@ -7,7 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import User, TalentGrant, Donation, DAILY_GRANT_LIMIT
+from .models import User, TalentGrant, Donation
 from .permissions import IsTeacher, IsStudent, IsAdmin
 from .serializers import (
     RegisterSerializer, LoginSerializer, UserSerializer,
@@ -178,15 +178,6 @@ class GrantView(APIView):
         if amount < 1:
             return Response({'detail': '1 달란트 이상 줄 수 있어요.'},
                             status=status.HTTP_400_BAD_REQUEST)
-
-        # 하루에 한 학생이 받을 수 있는 달란트는 최대 DAILY_GRANT_LIMIT 개.
-        received_today = student.received_today
-        if received_today + amount > DAILY_GRANT_LIMIT:
-            remaining = max(0, DAILY_GRANT_LIMIT - received_today)
-            return Response(
-                {'detail': f'오늘은 이 학생에게 최대 {DAILY_GRANT_LIMIT}개까지 줄 수 있어요. '
-                           f'(오늘 {received_today}개 지급 · {remaining}개 남음)'},
-                status=status.HTTP_400_BAD_REQUEST)
 
         grant = TalentGrant.objects.create(
             teacher=request.user,

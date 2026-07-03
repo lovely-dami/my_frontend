@@ -1,10 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-from django.utils import timezone
 from django.utils.functional import cached_property
-
-# A student may receive at most this many talent per day (per teacher giving).
-DAILY_GRANT_LIMIT = 15
 
 
 class User(AbstractUser):
@@ -59,13 +55,6 @@ class User(AbstractUser):
     def balance(self):
         """Talent currently held (received minus donated)."""
         return self.received_talent - self.donated_talent
-
-    @property
-    def received_today(self):
-        """Talent this student received since local midnight (Asia/Seoul)."""
-        start = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
-        return self.grants_received.filter(created_at__gte=start).aggregate(
-            total=models.Sum('amount'))['total'] or 0
 
     def __str__(self):
         return f'{self.username} ({self.get_role_display()})'

@@ -1,7 +1,7 @@
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 
-from .models import User, TalentGrant, Donation, DAILY_GRANT_LIMIT
+from .models import User, TalentGrant, Donation
 
 
 def tree_stage(total):
@@ -77,19 +77,14 @@ class StudentBriefSerializer(serializers.ModelSerializer):
     received_talent = serializers.IntegerField(read_only=True)
     donated_talent = serializers.IntegerField(read_only=True)
     balance = serializers.IntegerField(read_only=True)
-    received_today = serializers.IntegerField(read_only=True)
-    daily_limit = serializers.SerializerMethodField()
     stage = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'username', 'received_talent', 'donated_talent', 'balance',
-                  'received_today', 'daily_limit', 'stage', 'teacher', 'teacher_name']
+                  'stage', 'teacher', 'teacher_name']
 
     teacher_name = serializers.CharField(source='teacher.username', read_only=True, default=None)
-
-    def get_daily_limit(self, obj):
-        return DAILY_GRANT_LIMIT
 
     def get_stage(self, obj):
         return tree_stage(obj.received_talent)
