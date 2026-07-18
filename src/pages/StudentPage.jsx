@@ -7,8 +7,10 @@ import Celebration from '../components/Celebration'
 import AppHeader from '../components/AppHeader'
 import { TONES, parseGrantReason } from '../constants/talentRules'
 
+// 기기 시간대와 무관하게 한국시간으로 표시한다(해외·설정 오류 단말에서 날짜가 어긋나지 않도록).
 function formatDate(iso) {
   return new Date(iso).toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
     month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 }

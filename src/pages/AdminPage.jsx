@@ -3,8 +3,10 @@ import { apiFetch } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import AppHeader from '../components/AppHeader'
 
+// 기기 시간대와 무관하게 한국시간으로 표시한다(결산 기준이 서버의 한국시간과 같아야 한다).
 function formatDateTime(iso) {
   return new Date(iso).toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
     month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 }
