@@ -1,5 +1,6 @@
 from django.db.models import Sum, OuterRef, Subquery, IntegerField
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
@@ -151,41 +152,111 @@ class DonateView(APIView):
 
 # ---------------------------------------------------------------- teacher
 
+def talent_subquery(model):
+    """학생별 달란트 합계를 서브쿼리 한 개로 계산(학생 수만큼 집계 쿼리가 나가는 것을 방지)."""
+    sq = (model.objects.filter(student=OuterRef('pk'))
+          .values('student').annotate(s=Sum('amount')).values('s'))
+    return Coalesce(Subquery(sq, output_field=IntegerField()), 0)
+
+
+def today_grants(teacher):
+    """오늘(한국 시간 기준) 이 선생님이 준 지급 내역 요약.
+
+    하루치는 많아야 수십~수백 건이라 한 번에 가져와 파이썬에서 합계를 낸다(집계 쿼리를
+    따로 추가하지 않는다). select_related로 학생 이름 조회 N+1을 막는다.
+    """
+    start = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+    grants = list(
+        TalentGrant.objects.filter(teacher=teacher, created_at__gte=start)
+        .select_related('student', 'teacher')
+    )
+    return {
+        'total': sum(g.amount for g in grants),
+        'count': len(grants),
+        'grants': TalentGrantSerializer(grants[:50], many=True).data,
+    }
+
+
 class TeacherStudents(APIView):
     permission_classes = [IsTeacher]
 
     def get(self, request):
-        students = request.user.students.all().order_by('username')
-        return Response(StudentBriefSerializer(students, many=True).data)
+        # select_related('teacher'): 카드마다 teacher_name 을 읽느라 학생 수만큼
+        # 쿼리가 나가던 N+1 을 조인 한 번으로 없앤다.
+        # annotate: 받은/기부 달란트를 학생마다 집계하지 않고 서브쿼리로 한 번에 계산한다.
+        # 애노테이션 값은 인스턴스 __dict__ 에 들어가므로 모델의 cached_property 를
+        # 그대로 덮어쓴다(= 시리얼라이저는 코드 변경 없이 이 값을 쓴다).
+        students = (request.user.students
+                    .select_related('teacher')
+                    .annotate(
+                        received_talent=talent_subquery(TalentGrant),
+                        donated_talent=talent_subquery(Donation),
+                    )
+                    .order_by('username'))
+        # 오늘의 지급 내역을 같은 응답에 담는다. 엔드포인트를 따로 두면 폴링마다 요청이
+        # 2배가 되므로, 한 번의 왕복으로 끝내는 편이 체감 속도에 유리하다.
+        return Response({
+            'students': StudentBriefSerializer(students, many=True).data,
+            'today': today_grants(request.user),
+        })
 
 
 class GrantView(APIView):
+    """달란트 지급. 규칙을 여러 개 골라 한 번에 줄 수 있다.
+
+    요청 형식 — ``{"student": 1, "items": [{"reason": "...", "amount": 2}, ...]}``
+    규칙 하나당 TalentGrant 한 행으로 저장한다. 사유를 한 칸에 뭉쳐 넣지 않으므로
+    학생 화면에서 규칙별로 보이고, 나중에 규칙별 통계도 낼 수 있다. 행이 여러 개여도
+    bulk_create 로 INSERT 는 한 번만 나간다. 예전 단건 형식(amount/reason)도 받는다.
+    """
     permission_classes = [IsTeacher]
 
+    MAX_ITEMS = 20
+
     def post(self, request):
-        student_id = request.data.get('student')
         student = User.objects.filter(
-            id=student_id, role=User.Role.STUDENT, teacher=request.user
+            id=request.data.get('student'), role=User.Role.STUDENT, teacher=request.user
         ).first()
         if not student:
             return Response({'detail': '담당하는 학생만 달란트를 줄 수 있어요.'},
                             status=status.HTTP_400_BAD_REQUEST)
-        try:
-            amount = int(request.data.get('amount', 1))
-        except (TypeError, ValueError):
-            return Response({'detail': '올바른 달란트 수를 입력해 주세요.'},
+
+        raw = request.data.get('items')
+        if not isinstance(raw, list):  # 단건 요청 하위 호환
+            raw = [{'amount': request.data.get('amount', 1),
+                    'reason': request.data.get('reason', '')}]
+        if not raw:
+            return Response({'detail': '줄 규칙을 하나 이상 선택해 주세요.'},
                             status=status.HTTP_400_BAD_REQUEST)
-        if amount < 1:
-            return Response({'detail': '1 달란트 이상 줄 수 있어요.'},
+        if len(raw) > self.MAX_ITEMS:
+            return Response({'detail': f'한 번에 최대 {self.MAX_ITEMS}개까지 선택할 수 있어요.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        grant = TalentGrant.objects.create(
-            teacher=request.user,
-            student=student,
-            amount=amount,
-            reason=str(request.data.get('reason', ''))[:200],
-        )
-        return Response(TalentGrantSerializer(grant).data, status=status.HTTP_201_CREATED)
+        items = []
+        for item in raw:
+            if not isinstance(item, dict):
+                return Response({'detail': '잘못된 요청이에요.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            try:
+                amount = int(item.get('amount', 1))
+            except (TypeError, ValueError):
+                return Response({'detail': '올바른 달란트 수를 입력해 주세요.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if amount < 1:
+                return Response({'detail': '1 달란트 이상 줄 수 있어요.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            items.append(TalentGrant(
+                teacher=request.user,
+                student=student,
+                amount=amount,
+                reason=str(item.get('reason', ''))[:200],
+            ))
+
+        grants = TalentGrant.objects.bulk_create(items)
+        return Response({
+            'granted': sum(g.amount for g in grants),
+            'grants': TalentGrantSerializer(grants, many=True).data,
+        }, status=status.HTTP_201_CREATED)
 
 
 # ---------------------------------------------------------------- admin
