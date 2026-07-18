@@ -1,9 +1,13 @@
+import { lazy, Suspense } from 'react'
 import { useAuth } from './auth/useAuth'
 import LoginPage from './pages/LoginPage'
-import StudentPage from './pages/StudentPage'
-import TeacherPage from './pages/TeacherPage'
-import AdminPage from './pages/AdminPage'
-import CommunityDisplayPage from './pages/CommunityDisplayPage'
+
+// 역할별 화면은 필요할 때만 내려받는다. 학생이 관리자·선생님 화면 코드까지
+// 받을 이유가 없다(로그인 화면은 모두가 먼저 보므로 그대로 둔다).
+const StudentPage = lazy(() => import('./pages/StudentPage'))
+const TeacherPage = lazy(() => import('./pages/TeacherPage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
+const CommunityDisplayPage = lazy(() => import('./pages/CommunityDisplayPage'))
 
 function FullScreen({ children }) {
   return (
@@ -21,14 +25,7 @@ function isDisplayMode() {
   )
 }
 
-function App() {
-  const { user, loading } = useAuth()
-
-  if (isDisplayMode()) return <CommunityDisplayPage />
-
-  if (loading) return <FullScreen>🌱 불러오는 중…</FullScreen>
-  if (!user) return <LoginPage />
-
+function roleView(user) {
   switch (user.role) {
     case 'teacher':
       return <TeacherPage />
@@ -38,6 +35,20 @@ function App() {
     default:
       return <StudentPage />
   }
+}
+
+function App() {
+  const { user, loading } = useAuth()
+
+  const view = isDisplayMode()
+    ? <CommunityDisplayPage />
+    : loading ? <FullScreen>🌱 불러오는 중…</FullScreen>
+    : !user ? <LoginPage />
+    : roleView(user)
+
+  return (
+    <Suspense fallback={<FullScreen>🌱 불러오는 중…</FullScreen>}>{view}</Suspense>
+  )
 }
 
 export default App

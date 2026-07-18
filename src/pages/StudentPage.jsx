@@ -203,8 +203,14 @@ function StudentPage() {
           <section className="rounded-3xl shadow-xl shadow-emerald-100/60 border border-emerald-100 overflow-hidden bg-white">
             {/* 큰 나무 — 성장이 잘 보이도록 화면을 크게 */}
             <div className="bg-gradient-to-b from-sky-50 via-emerald-50 to-amber-50 px-4 pt-5 pb-4">
-              <div className="flex justify-center">
-                <CommunityTree stage={cStage} size={280} />
+              {/* 데이터가 오기 전에 그리면 1단계 영상을 받다가 실제 단계 영상을 다시
+                  받게 되어 모바일 데이터를 헛되이 쓴다. 단계가 정해진 뒤 렌더한다. */}
+              <div className="flex justify-center items-center" style={{ minHeight: 280 }}>
+                {c ? (
+                  <CommunityTree stage={cStage} size={280} />
+                ) : (
+                  <span className="text-emerald-600/60">🌱 불러오는 중…</span>
+                )}
               </div>
               <p className="mt-2 text-center text-emerald-700 font-extrabold text-lg">
                 {communityInfo.icon} {communityInfo.label}
