@@ -3,46 +3,79 @@ import { apiFetch } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import AppHeader from '../components/AppHeader'
 import Celebration from '../components/Celebration'
-import { TALENT_CATEGORIES, TONES, ruleReason } from '../constants/talentRules'
+import { TALENT_CATEGORIES, TONES, ruleReason, parseGrantReason } from '../constants/talentRules'
+
+const timeLabel = (iso) =>
+  new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
 
 function TeacherPage() {
-  const { data: students, refresh } = usePolling(() => apiFetch('/teacher/students/'), 12000)
+  const { data, refresh } = usePolling(() => apiFetch('/teacher/students/'), 12000)
 
   const [target, setTarget] = useState(null) // student being granted
-  const [amount, setAmount] = useState(1)
-  const [reason, setReason] = useState('')
-  const [selectedId, setSelectedId] = useState(null) // 선택된 규칙 하이라이트용
+  // 고른 규칙들 — { id, label, reason, amount, tone }
+  const [picked, setPicked] = useState([])
+  const [custom, setCustom] = useState('') // 직접 입력 사유
+  const [customAmount, setCustomAmount] = useState(1)
   const [granting, setGranting] = useState(false)
   const [error, setError] = useState('')
   const [toast, setToast] = useState(null)
   const [celebrate, setCelebrate] = useState(false)
+  const [showToday, setShowToday] = useState(false)
+
+  const students = data?.students ?? []
+  const today = data?.today ?? { total: 0, count: 0, grants: [] }
 
   const openGrant = (student) => {
     setTarget(student)
-    setAmount(1)
-    setReason('')
-    setSelectedId(null)
+    setPicked([])
+    setCustom('')
+    setCustomAmount(1)
     setError('')
   }
 
-  const selectRule = (category, rule, id) => {
-    setSelectedId(id)
-    setAmount(rule.amount)
-    setReason(ruleReason(category.label, rule.label))
+  // 규칙 누르면 선택/해제 (여러 개 고를 수 있다)
+  const toggleRule = (category, rule, id) => {
+    setPicked((prev) =>
+      prev.some((p) => p.id === id)
+        ? prev.filter((p) => p.id !== id)
+        : [...prev, {
+            id,
+            label: rule.label,
+            reason: ruleReason(category.label, rule.label),
+            amount: rule.amount,
+            tone: category.tone,
+          }],
+    )
   }
 
+  const bumpPicked = (id, delta) =>
+    setPicked((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, amount: Math.max(1, p.amount + delta) } : p)),
+    )
+
+  const customTrimmed = custom.trim()
+  const total =
+    picked.reduce((sum, p) => sum + p.amount, 0) + (customTrimmed ? customAmount : 0)
+
   const handleGrant = async () => {
+    const items = picked.map((p) => ({ reason: p.reason, amount: p.amount }))
+    if (customTrimmed) items.push({ reason: customTrimmed, amount: customAmount })
+    if (items.length === 0) {
+      setError('규칙을 하나 이상 선택해 주세요.')
+      return
+    }
     setError('')
     setGranting(true)
     try {
+      // 규칙이 여러 개여도 요청은 한 번 — 서버가 bulk_create 로 한 번에 저장한다.
       await apiFetch('/teacher/grant/', {
         method: 'POST',
-        body: { student: target.id, amount, reason },
+        body: { student: target.id, items },
       })
       const name = target.username
       setTarget(null)
       await refresh()
-      setToast(`${name} 학생에게 ${amount} 달란트를 주었어요!`)
+      setToast(`${name} 학생에게 ${total} 달란트를 주었어요!`)
       setCelebrate(true)
       setTimeout(() => setToast(null), 2500)
     } catch (err) {
@@ -52,24 +85,84 @@ function TeacherPage() {
     }
   }
 
-  const list = students ?? []
-
   return (
     <div className="min-h-svh bg-gradient-to-b from-sky-50 via-white to-emerald-50 px-4 py-4">
       <div className="max-w-2xl mx-auto space-y-4">
         <AppHeader title="우리 반 달란트" />
 
+        {/* 오늘의 지급 요약 — 눌러서 상세 내역 펼치기 */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowToday((v) => !v)}
+            className="w-full flex items-center gap-3 px-5 py-3.5 text-left active:bg-gray-50 transition"
+          >
+            <span className="text-2xl">📅</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-gray-800">오늘 준 달란트</p>
+              <p className="text-xs text-gray-400 mt-0.5">{today.count}번 지급</p>
+            </div>
+            <span className="text-2xl font-extrabold text-amber-500">{today.total}</span>
+            <span className={`text-gray-300 text-sm transition ${showToday ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          </button>
+
+          {showToday && (
+            <div className="border-t border-gray-100 max-h-72 overflow-y-auto">
+              {today.grants.length === 0 ? (
+                <p className="px-5 py-6 text-center text-sm text-gray-400">
+                  오늘은 아직 준 달란트가 없어요.
+                </p>
+              ) : (
+                <ul className="divide-y divide-gray-50">
+                  {today.grants.map((g) => {
+                    const { category, detail } = parseGrantReason(g.reason)
+                    return (
+                      <li key={g.id} className="flex items-start gap-3 px-5 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-gray-800">
+                            {g.student_name}
+                            <span className="ml-2 text-[11px] font-normal text-gray-300">
+                              {timeLabel(g.created_at)}
+                            </span>
+                          </p>
+                          {category ? (
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              <span
+                                className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${TONES[category.tone].tag}`}
+                              >
+                                {category.icon}
+                              </span>{' '}
+                              {detail}
+                            </p>
+                          ) : (
+                            detail && <p className="mt-0.5 text-xs text-gray-500">{detail}</p>
+                          )}
+                        </div>
+                        <span className="shrink-0 text-sm font-extrabold text-emerald-600">
+                          +{g.amount}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
         <p className="text-sm text-gray-500 px-1">
-          담당 학생 <b className="text-sky-600">{list.length}</b>명 · 카드를 눌러 달란트를 주세요.
+          담당 학생 <b className="text-sky-600">{students.length}</b>명 · 카드를 눌러 달란트를 주세요.
         </p>
 
-        {list.length === 0 ? (
+        {students.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-10 text-center text-sm text-gray-400">
             아직 배정된 학생이 없어요. 관리자에게 학생 배정을 요청하세요.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {list.map((s) => (
+            {students.map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -91,7 +184,7 @@ function TeacherPage() {
         )}
       </div>
 
-      {/* 달란트 지급 모달 — 규칙을 골라 달란트를 준다 */}
+      {/* 달란트 지급 모달 — 규칙을 여러 개 골라 한 번에 준다 */}
       {target && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/40 backdrop-blur-sm"
@@ -107,7 +200,7 @@ function TeacherPage() {
                 {target.username} 에게 달란트 주기
               </h3>
               <p className="mt-0.5 text-center text-xs text-gray-400">
-                규칙을 누르면 달란트가 자동으로 정해져요
+                규칙을 여러 개 골라도 돼요 · 다시 누르면 취소
               </p>
             </div>
 
@@ -123,18 +216,25 @@ function TeacherPage() {
                     <div className="space-y-1.5">
                       {cat.rules.map((rule, i) => {
                         const id = `${cat.key}-${i}`
-                        const active = selectedId === id
+                        const active = picked.some((p) => p.id === id)
                         return (
                           <button
                             key={id}
                             type="button"
-                            onClick={() => selectRule(cat, rule, id)}
+                            onClick={() => toggleRule(cat, rule, id)}
                             className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-left transition ${
-                              active
-                                ? tone.active
-                                : 'border-gray-200 bg-white hover:bg-gray-50'
+                              active ? tone.active : 'border-gray-200 bg-white hover:bg-gray-50'
                             }`}
                           >
+                            <span
+                              className={`shrink-0 w-5 h-5 rounded-md border flex items-center justify-center text-[11px] font-bold ${
+                                active
+                                  ? 'bg-sky-500 border-sky-500 text-white'
+                                  : 'border-gray-300 text-transparent'
+                              }`}
+                            >
+                              ✓
+                            </span>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-medium text-gray-800">{rule.label}</p>
                               {rule.hint && (
@@ -159,46 +259,85 @@ function TeacherPage() {
               })}
             </div>
 
-            {/* 푸터 — 선택 요약 · 수량 조절 · 주기 */}
+            {/* 푸터 — 선택 요약 · 직접 입력 · 주기 */}
             <div className="px-5 pt-3 pb-5 border-t border-gray-100 shrink-0 space-y-3">
-              <input
-                type="text"
-                value={reason}
-                onChange={(e) => { setReason(e.target.value); setSelectedId(null) }}
-                placeholder="사유 (규칙 선택 또는 직접 입력)"
-                maxLength={200}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
-              />
+              {picked.length > 0 && (
+                <ul className="max-h-32 overflow-y-auto space-y-1 -mx-1 px-1">
+                  {picked.map((p) => (
+                    <li
+                      key={p.id}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs ${TONES[p.tone].tag}`}
+                    >
+                      <span className="min-w-0 flex-1 truncate font-medium">{p.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => bumpPicked(p.id, -1)}
+                        className="w-5 h-5 rounded-full bg-white/70 font-bold leading-none"
+                      >
+                        −
+                      </button>
+                      <span className="w-5 text-center font-extrabold">{p.amount}</span>
+                      <button
+                        type="button"
+                        onClick={() => bumpPicked(p.id, 1)}
+                        className="w-5 h-5 rounded-full bg-white/70 font-bold leading-none"
+                      >
+                        ＋
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPicked((prev) => prev.filter((x) => x.id !== p.id))}
+                        className="w-5 h-5 rounded-full bg-white/70 text-gray-400 leading-none"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={custom}
+                  onChange={(e) => setCustom(e.target.value)}
+                  placeholder="직접 입력 (선택)"
+                  maxLength={200}
+                  className="min-w-0 flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-sky-300"
+                />
+                {customTrimmed && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setCustomAmount((a) => Math.max(1, a - 1))}
+                      className="w-7 h-7 rounded-full bg-gray-100 font-bold text-gray-600"
+                    >
+                      −
+                    </button>
+                    <span className="w-5 text-center font-extrabold text-sky-600">
+                      {customAmount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCustomAmount((a) => a + 1)}
+                      className="w-7 h-7 rounded-full bg-gray-100 font-bold text-gray-600"
+                    >
+                      ＋
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {error && <p className="text-sm text-red-500 text-center">{error}</p>}
 
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setAmount((a) => Math.max(1, a - 1))}
-                    className="w-9 h-9 rounded-full bg-gray-100 text-lg font-bold text-gray-600 active:scale-95"
-                  >
-                    −
-                  </button>
-                  <span className="text-2xl font-extrabold text-sky-600 w-9 text-center">{amount}</span>
-                  <button
-                    type="button"
-                    onClick={() => setAmount((a) => a + 1)}
-                    className="w-9 h-9 rounded-full bg-gray-100 text-lg font-bold text-gray-600 active:scale-95"
-                  >
-                    ＋
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleGrant}
-                  disabled={granting || amount < 1}
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-sky-500 to-emerald-500 text-white font-bold disabled:opacity-50 active:scale-[0.98] transition"
-                >
-                  {granting ? '주는 중…' : `${amount} 달란트 주기`}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleGrant}
+                disabled={granting || total < 1}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-sky-500 to-emerald-500 text-white font-bold disabled:opacity-50 active:scale-[0.98] transition"
+              >
+                {granting ? '주는 중…' : total < 1 ? '규칙을 선택해 주세요' : `${total} 달란트 주기`}
+              </button>
 
               <button
                 type="button"

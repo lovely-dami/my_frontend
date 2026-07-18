@@ -33,6 +33,7 @@ export const TALENT_CATEGORIES = [
     tone: 'violet',
     rules: [
       { label: '봉헌 위원으로 섬겨요', amount: 1 },
+      { label: '말씀 암송을 해요', amount: 1 },
       { label: '설교시간에 집중해요!', amount: 1 },
       { label: '공과공부 마무리 기도', amount: 1 },
       { label: '대표 기도', amount: 5 },
