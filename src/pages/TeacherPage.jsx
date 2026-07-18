@@ -5,8 +5,12 @@ import AppHeader from '../components/AppHeader'
 import Celebration from '../components/Celebration'
 import { TALENT_CATEGORIES, TONES, ruleReason, parseGrantReason } from '../constants/talentRules'
 
+// 시간대를 한국으로 고정한다. 서버가 '오늘'을 한국시간 자정 기준으로 판단하므로,
+// 표시도 같은 기준이어야 한다(기기 시간대가 다르면 날짜가 하루 어긋나 보인다).
 const timeLabel = (iso) =>
-  new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  new Date(iso).toLocaleTimeString('ko-KR', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit',
+  })
 
 function TeacherPage() {
   const { data, refresh } = usePolling(() => apiFetch('/teacher/students/'), 12000)
