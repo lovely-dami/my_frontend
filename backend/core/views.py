@@ -1,4 +1,4 @@
-from django.db.models import Sum, OuterRef, Subquery, IntegerField
+from django.db.models import Sum, Count, OuterRef, Subquery, IntegerField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status
@@ -31,6 +31,19 @@ def community_stage(total):
         if total >= threshold:
             stage = i
     return stage
+
+
+def talent_subquery(model):
+    """학생별 달란트 합계를 서브쿼리로 계산한다.
+
+    모델의 received_talent/donated_talent(cached_property)는 한 요청 안의 중복 집계만
+    막아줄 뿐, 인스턴스가 N개면 쿼리도 N배로 나간다. 이 애노테이션 값은 인스턴스
+    __dict__ 에 들어가 cached_property 를 덮어쓰므로, 시리얼라이저는 코드 변경 없이
+    이 값을 쓴다.
+    """
+    sq = (model.objects.filter(student=OuterRef('pk'))
+          .values('student').annotate(s=Sum('amount')).values('s'))
+    return Coalesce(Subquery(sq, output_field=IntegerField()), 0)
 
 
 def auth_payload(user):
@@ -74,8 +87,9 @@ def me(request):
 
 def community_summary():
     """Anonymous aggregate of the shared tree — never exposes who donated."""
-    total = Donation.objects.aggregate(t=Sum('amount'))['t'] or 0
-    donors = Donation.objects.values('student').distinct().count()
+    # 합계와 기부자 수를 한 번의 집계로 구한다(같은 테이블을 두 번 훑지 않도록).
+    agg = Donation.objects.aggregate(t=Sum('amount'), d=Count('student', distinct=True))
+    total, donors = agg['t'] or 0, agg['d']
     return {
         'total_donated': total,
         'goal': COMMUNITY_GOAL,
@@ -108,7 +122,14 @@ class StudentDashboard(APIView):
     permission_classes = [IsStudent]
 
     def get(self, request):
-        user = request.user
+        # 가장 잦은 API(5초 폴링)라 사용자를 한 번에 완성해서 가져온다.
+        # 애노테이션으로 받은/기부 집계 2쿼리를, select_related('teacher')로
+        # teacher_name 지연 조회 1쿼리를 없앤다.
+        user = (User.objects
+                .select_related('teacher')
+                .annotate(received_talent=talent_subquery(TalentGrant),
+                          donated_talent=talent_subquery(Donation))
+                .get(pk=request.user.pk))
         received = user.received_talent
         grants = user.grants_received.select_related('teacher')[:20]
         # select_related('student'): 기부 목록의 student_name 조회가 항목마다 쿼리를
@@ -151,13 +172,6 @@ class DonateView(APIView):
 
 
 # ---------------------------------------------------------------- teacher
-
-def talent_subquery(model):
-    """학생별 달란트 합계를 서브쿼리 한 개로 계산(학생 수만큼 집계 쿼리가 나가는 것을 방지)."""
-    sq = (model.objects.filter(student=OuterRef('pk'))
-          .values('student').annotate(s=Sum('amount')).values('s'))
-    return Coalesce(Subquery(sq, output_field=IntegerField()), 0)
-
 
 def today_grants(teacher):
     """오늘(한국 시간 기준) 이 선생님이 준 지급 내역 요약.

@@ -39,9 +39,10 @@ export async function apiFetch(path, { method = 'GET', body, auth = true } = {})
   }
 
   let response
-  // 서버가 막혔을 때 무한 로딩 대신 60초 후 에러를 띄운다.
+  // 서버가 막혔을 때 무한 로딩 대신 일정 시간 뒤 에러를 띄운다.
+  // 폴링 주기(5~15초)보다 훨씬 긴 대기는 의미가 없다 — 다음 폴링이 어차피 대체한다.
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 60000)
+  const timeoutId = setTimeout(() => controller.abort(), 15000)
   try {
     response = await fetch(`${API_BASE}${path}`, {
       method,

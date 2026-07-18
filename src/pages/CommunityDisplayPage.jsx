@@ -42,9 +42,18 @@ function CommunityDisplayPage() {
         함께 나눈 사랑이 나무를 키워요
       </p>
 
-      {/* 나무를 가장 크게 — 성장이 잘 보이도록 (높이 기준 400) */}
-      <div className="my-3 sm:my-4 w-full max-w-5xl flex justify-center">
-        <CommunityTree stage={stage} height={420} />
+      {/* 나무를 가장 크게 — 성장이 잘 보이도록 (높이 기준 400)
+          데이터가 오기 전에 그리면 1단계 영상을 받다가 실제 단계 영상을 다시 받게 되어
+          모바일에서 수 MB를 헛되이 쓴다. 자리만 잡아두고 단계가 정해진 뒤에 렌더한다. */}
+      <div
+        className="my-3 sm:my-4 w-full max-w-5xl flex justify-center"
+        style={{ minHeight: 420 }}
+      >
+        {data ? (
+          <CommunityTree stage={stage} height={420} />
+        ) : (
+          <div className="flex items-center text-emerald-600/60 text-lg">🌱 불러오는 중…</div>
+        )}
       </div>
 
       <p className="text-amber-600 font-extrabold text-xl sm:text-3xl text-center">

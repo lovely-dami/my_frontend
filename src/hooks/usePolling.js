@@ -9,6 +9,9 @@ export function usePolling(fetcher, intervalMs = 5000, deps = []) {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const savedFetcher = useRef(fetcher)
+  // 응답 순서 보장용. 느린 응답이 뒤늦게 도착해 최신 화면을 덮어쓰지 않도록,
+  // 가장 마지막에 시작한 요청의 결과만 반영한다.
+  const seq = useRef(0)
 
   // Keep the latest fetcher without re-subscribing the interval.
   useEffect(() => {
@@ -16,24 +19,34 @@ export function usePolling(fetcher, intervalMs = 5000, deps = []) {
   })
 
   const refresh = useCallback(async () => {
+    const my = ++seq.current
     try {
       const result = await savedFetcher.current()
-      setData(result)
-      setError(null)
+      if (my === seq.current) {
+        setData(result)
+        setError(null)
+      }
       return result
     } catch (err) {
-      setError(err)
+      if (my === seq.current) setError(err)
       throw err
     } finally {
-      setLoading(false)
+      if (my === seq.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
     let active = true
+    let inFlight = false
     // 백그라운드 탭(화면 잠금·앱 전환)에서는 폴링을 멈춰 서버 부하를 줄인다.
+    // inFlight: 느린 네트워크에서 이전 요청이 끝나기 전에 다음 폴링이 겹쳐
+    // 요청이 쌓이는 것을 막는다.
     const tick = () => {
-      if (active && !document.hidden) refresh().catch(() => {})
+      if (!active || document.hidden || inFlight) return
+      inFlight = true
+      refresh()
+        .catch(() => {})
+        .finally(() => { inFlight = false })
     }
     tick()
     const id = setInterval(tick, intervalMs)
