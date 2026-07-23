@@ -25,6 +25,9 @@ function TeacherPage() {
   const [toast, setToast] = useState(null)
   const [celebrate, setCelebrate] = useState(false)
   const [showToday, setShowToday] = useState(false)
+  const [pendingCancel, setPendingCancel] = useState(null) // 취소하려는 지급 내역
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
 
   const students = data?.students ?? []
   const today = data?.today ?? { total: 0, count: 0, grants: [] }
@@ -79,13 +82,32 @@ function TeacherPage() {
       const name = target.username
       setTarget(null)
       await refresh()
-      setToast(`${name} 학생에게 ${total} 달란트를 주었어요!`)
+      setToast({ icon: '🎉', text: `${name} 학생에게 ${total} 달란트를 주었어요!` })
       setCelebrate(true)
       setTimeout(() => setToast(null), 2500)
     } catch (err) {
       setError(err.message)
     } finally {
       setGranting(false)
+    }
+  }
+
+  // 잘못 준 달란트 되돌리기. 당일 여부는 서버가 다시 확인하므로, 자정을 넘긴 채
+  // 켜둔 화면에서 눌러도 안전하게 거절된다(그 메시지를 그대로 보여준다).
+  const handleCancel = async () => {
+    const { id, student_name: name, amount } = pendingCancel
+    setCancelError('')
+    setCancelling(true)
+    try {
+      await apiFetch(`/teacher/grant/${id}/`, { method: 'DELETE' })
+      setPendingCancel(null)
+      await refresh()
+      setToast({ icon: '↩️', text: `${name} 학생의 ${amount} 달란트를 취소했어요.` })
+      setTimeout(() => setToast(null), 2500)
+    } catch (err) {
+      setCancelError(err.message)
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -113,17 +135,17 @@ function TeacherPage() {
           </button>
 
           {showToday && (
-            <div className="border-t border-gray-100 max-h-72 overflow-y-auto">
+            <div className="border-t border-gray-100">
               {today.grants.length === 0 ? (
                 <p className="px-5 py-6 text-center text-sm text-gray-400">
                   오늘은 아직 준 달란트가 없어요.
                 </p>
               ) : (
-                <ul className="divide-y divide-gray-50">
+                <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
                   {today.grants.map((g) => {
                     const { category, detail } = parseGrantReason(g.reason)
                     return (
-                      <li key={g.id} className="flex items-start gap-3 px-5 py-2.5">
+                      <li key={g.id} className="flex items-start gap-3 pl-5 pr-3 py-2.5">
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-gray-800">
                             {g.student_name}
@@ -144,13 +166,30 @@ function TeacherPage() {
                             detail && <p className="mt-0.5 text-xs text-gray-500">{detail}</p>
                           )}
                         </div>
-                        <span className="shrink-0 text-sm font-extrabold text-emerald-600">
+                        <span className="shrink-0 self-center text-sm font-extrabold text-emerald-600">
                           +{g.amount}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCancelError('')
+                            setPendingCancel(g)
+                          }}
+                          aria-label={`${g.student_name} 학생에게 준 ${g.amount} 달란트 취소`}
+                          className="shrink-0 self-center w-7 h-7 rounded-full text-gray-300 hover:text-rose-500 hover:bg-rose-50 active:scale-95 transition text-xs leading-none"
+                        >
+                          ✕
+                        </button>
                       </li>
                     )
                   })}
                 </ul>
+              )}
+              {today.grants.length > 0 && (
+                <p className="px-5 py-2 text-[11px] text-gray-400 bg-gray-50/70 border-t border-gray-50">
+                  잘못 준 달란트는 ✕ 를 눌러{' '}
+                  <b className="font-semibold text-gray-500">오늘 안에만</b> 취소할 수 있어요.
+                </p>
               )}
             </div>
           )}
@@ -356,9 +395,54 @@ function TeacherPage() {
         </div>
       )}
 
+      {/* 지급 취소 확인 — 한 번 더 묻는다. 목록에서 바로 지워지면 그 자체가 새로운 실수가 된다. */}
+      {pendingCancel && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={() => !cancelling && setPendingCancel(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-xs px-6 py-5 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-3xl">↩️</p>
+            <h3 className="mt-2 font-bold text-gray-800">이 달란트를 취소할까요?</h3>
+            <div className="mt-3 rounded-xl bg-gray-50 px-4 py-3 text-sm">
+              <p className="font-bold text-gray-800">{pendingCancel.student_name}</p>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {parseGrantReason(pendingCancel.reason).detail || '사유 없음'}
+              </p>
+              <p className="mt-1 font-extrabold text-rose-500">−{pendingCancel.amount} 달란트</p>
+            </div>
+            <p className="mt-2.5 text-[11px] text-gray-400">
+              학생 화면에서도 바로 사라져요.
+            </p>
+
+            {cancelError && <p className="mt-2.5 text-xs text-red-500">{cancelError}</p>}
+
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="mt-4 w-full py-3 rounded-xl bg-rose-500 text-white font-bold disabled:opacity-50 active:scale-[0.98] transition"
+            >
+              {cancelling ? '취소하는 중…' : '네, 취소할래요'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingCancel(null)}
+              disabled={cancelling}
+              className="mt-1 w-full py-2 text-sm text-gray-400 disabled:opacity-50"
+            >
+              그대로 둘래요
+            </button>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[55] bg-gray-900 text-white text-sm font-medium px-5 py-3 rounded-full shadow-lg animate-badge-pop">
-          🎉 {toast}
+          {toast.icon} {toast.text}
         </div>
       )}
 
