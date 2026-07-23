@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
-import { COMMUNITY_STAGES } from '../constants/tree'
+import { COMMUNITY_STAGES, COMMUNITY_GOAL_FALLBACK } from '../constants/tree'
 import CommunityTree from '../components/CommunityTree'
 import Celebration from '../components/Celebration'
 
@@ -18,7 +18,7 @@ function CommunityDisplayPage() {
   const stage = data ? Math.min(COMMUNITY_STAGES.length - 1, Math.max(0, data.stage)) : 0
   const info = COMMUNITY_STAGES[stage]
   const total = data?.total_donated ?? 0
-  const goal = data?.goal ?? 8
+  const goal = data?.goal ?? COMMUNITY_GOAL_FALLBACK
   const donors = data?.donor_count ?? 0
   const progress = Math.min((total / goal) * 100, 100)
 

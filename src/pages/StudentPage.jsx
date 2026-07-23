@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
-import { COMMUNITY_STAGES } from '../constants/tree'
+import { COMMUNITY_STAGES, COMMUNITY_GOAL_FALLBACK } from '../constants/tree'
 import CommunityTree from '../components/CommunityTree'
 import Celebration from '../components/Celebration'
 import AppHeader from '../components/AppHeader'
@@ -227,7 +227,7 @@ function StudentPage() {
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span className="font-semibold text-gray-700">
                   {c?.total_donated ?? 0}
-                  <span className="text-gray-400"> / {c?.goal ?? 8} 달란트</span>
+                  <span className="text-gray-400"> / {c?.goal ?? COMMUNITY_GOAL_FALLBACK} 달란트</span>
                 </span>
                 {c?.donor_count != null && <span>{c.donor_count}명 참여 💚</span>}
               </div>
