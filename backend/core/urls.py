@@ -20,6 +20,7 @@ urlpatterns = [
     # teacher
     path('teacher/students/', views.TeacherStudents.as_view()),
     path('teacher/grant/', views.GrantView.as_view()),
+    path('teacher/grant/<int:pk>/', views.GrantDetail.as_view()),  # 오늘 준 달란트 취소
 
     # admin
     path('admin/users/', views.AdminUsers.as_view()),

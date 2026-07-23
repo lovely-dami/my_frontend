@@ -173,15 +173,19 @@ class DonateView(APIView):
 
 # ---------------------------------------------------------------- teacher
 
+def today_start():
+    """'오늘'의 시작(한국 시간 자정). 지급 목록과 취소 가능 기간이 같은 기준을 쓴다."""
+    return timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def today_grants(teacher):
     """오늘(한국 시간 기준) 이 선생님이 준 지급 내역 요약.
 
     하루치는 많아야 수십~수백 건이라 한 번에 가져와 파이썬에서 합계를 낸다(집계 쿼리를
     따로 추가하지 않는다). select_related로 학생 이름 조회 N+1을 막는다.
     """
-    start = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
     grants = list(
-        TalentGrant.objects.filter(teacher=teacher, created_at__gte=start)
+        TalentGrant.objects.filter(teacher=teacher, created_at__gte=today_start())
         .select_related('student', 'teacher')
     )
     return {
@@ -271,6 +275,35 @@ class GrantView(APIView):
             'granted': sum(g.amount for g in grants),
             'grants': TalentGrantSerializer(grants, many=True).data,
         }, status=status.HTTP_201_CREATED)
+
+
+class GrantDetail(APIView):
+    """잘못 준 달란트 되돌리기 — 내가 오늘 준 지급만 삭제할 수 있다.
+
+    당일 제한과 본인 지급 제한은 여기서 다시 확인한다. 화면에는 오늘 것만 보이지만,
+    자정을 넘긴 채 켜둔 화면이나 남의 지급 id 로도 요청이 올 수 있기 때문이다.
+    """
+    permission_classes = [IsTeacher]
+
+    def delete(self, request, pk):
+        grant = (TalentGrant.objects
+                 .select_related('student')
+                 .filter(pk=pk, teacher=request.user, created_at__gte=today_start())
+                 .first())
+        if grant is None:
+            return Response({'detail': '오늘 준 달란트만 취소할 수 있어요.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 학생이 이미 기부했다면 취소하지 않는다. 지급만 지우면 보유 달란트가 음수가 되고,
+        # 공동체 나무에 반영된 기부는 되돌릴 수 없어 나무 단계가 부풀려진 채 남는다.
+        if grant.student.balance < grant.amount:
+            return Response(
+                {'detail': f'{grant.student.username} 학생이 이미 기부에 사용해서 취소할 수 없어요. '
+                           f'관리자에게 문의해 주세요.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        grant.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------- admin
