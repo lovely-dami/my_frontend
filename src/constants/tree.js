@@ -5,7 +5,8 @@ import community3 from '../assets/tree-characters/tree_3.mp4'
 import community4 from '../assets/tree-characters/tree_4.mp4'
 
 // ── Community tree (4 stages, driven by everyone's cumulative donations) ──
-//   stage 0: 1단계 · stage 1: +2개 · stage 2: +3개 · stage 3: +3개  (누적 2 / 5 / 8)
+// 단계 판정(stage)과 목표(goal)는 백엔드가 내려준다 — 임계값은 서버 환경변수
+// COMMUNITY_THRESHOLDS 하나로 관리하므로 프런트에 같은 숫자를 두지 않는다.
 export const COMMUNITY_VIDEOS = [community1, community2, community3, community4]
 
 // Community tree stages (4 stages, driven by everyone's donations)
@@ -16,13 +17,5 @@ export const COMMUNITY_STAGES = [
   { icon: '🎆', label: '활짝 피었어요!', description: '우리 모두의 사랑이 열매를 맺었어요!' },
 ]
 
-// Cumulative donated talent needed for each community stage (mirrors backend).
-export const COMMUNITY_THRESHOLDS = [0, 2, 5, 8]
-
-export function stageFromTalent(total) {
-  let stage = 0
-  COMMUNITY_THRESHOLDS.forEach((t, i) => {
-    if (total >= t) stage = i
-  })
-  return stage
-}
+// 응답이 오기 전 한 프레임 동안만 쓰이는 표시용 기본 목표치(서버 기본값과 동일).
+export const COMMUNITY_GOAL_FALLBACK = 40

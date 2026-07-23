@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db.models import Sum, Count, OuterRef, Subquery, IntegerField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -16,21 +17,20 @@ from .serializers import (
     PublicDonationSerializer, tree_stage,
 )
 
-# Community tree growth — cumulative donated talent needed to reach each stage.
-#   1단계 → 2단계: +2  (누적 2)
-#   2단계 → 3단계: +3  (누적 5)
-#   3단계 → 4단계: +3  (누적 8)
-COMMUNITY_THRESHOLDS = [0, 2, 5, 8]
-COMMUNITY_GOAL = COMMUNITY_THRESHOLDS[-1]  # fully-grown total (8)
-
-
+# Community tree growth — 단계별 누적 기부 달란트 임계값은 settings 에서 온다
+# (환경변수 COMMUNITY_THRESHOLDS 로 재배포 없이 조정 가능). 기본값 [0, 10, 24, 40].
 def community_stage(total):
     """Map community donated total to a 0-3 stage (4 stages)."""
     stage = 0
-    for i, threshold in enumerate(COMMUNITY_THRESHOLDS):
+    for i, threshold in enumerate(settings.COMMUNITY_THRESHOLDS):
         if total >= threshold:
             stage = i
     return stage
+
+
+def community_goal():
+    """나무가 완전히 자라는 누적 기부량(마지막 임계값)."""
+    return settings.COMMUNITY_THRESHOLDS[-1]
 
 
 def talent_subquery(model):
@@ -92,7 +92,7 @@ def community_summary():
     total, donors = agg['t'] or 0, agg['d']
     return {
         'total_donated': total,
-        'goal': COMMUNITY_GOAL,
+        'goal': community_goal(),
         'stage': community_stage(total),
         'donor_count': donors,
     }
@@ -404,5 +404,5 @@ class AdminStats(APIView):
             'total_received': total_received,
             'total_donated': total_donated,
             'community_stage': community_stage(total_donated),
-            'community_goal': COMMUNITY_GOAL,
+            'community_goal': community_goal(),
         })

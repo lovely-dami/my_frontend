@@ -52,6 +52,12 @@ Render는 2024년 5월부터 무료 PostgreSQL **만료를 90일 → 30일로 �
    | `ALLOWED_HOSTS` | `.onrender.com` |
    | `CORS_ALLOWED_ORIGINS` | 프론트 배포 후 입력 (예: `https://holytree.vercel.app`) |
    | `CSRF_TRUSTED_ORIGINS` | 동일하게 입력 |
+   | `COMMUNITY_THRESHOLDS` | (선택) 공동체 나무 단계별 누적 기부량. 미설정 시 `0,10,24,40` |
+
+   > `COMMUNITY_THRESHOLDS`는 **0으로 시작하는 오름차순 정수 4개**여야 합니다(영상이 4단계).
+   > 형식이 틀리면 서버가 죽지 않고 경고 후 기본값으로 동작합니다.
+   > 대시보드에서 값만 바꾸고 재시작하면 되며, 재배포는 필요 없습니다.
+   > `render.yaml`에는 일부러 넣지 않았습니다 — 넣으면 Blueprint 동기화가 대시보드 값을 덮어씁니다.
 4. 첫 배포 후 **Shell** 탭에서 데모 데이터/관리자 생성:
    ```bash
    python manage.py seed_demo        # 데모 학생/교사 시드
